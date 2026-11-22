@@ -3,12 +3,14 @@ import {
   ArrowLeft,
   BookOpen,
   Check,
+  ChevronDown,
   ChevronRight,
   Compass,
   Crosshair,
   Eye,
   FileText,
   Focus,
+  Gauge,
   HelpCircle,
   Layers,
   Microscope,
@@ -183,6 +185,9 @@ export const SimulationLab: React.FC<SimulationLabProps> = ({
   const [showLabels, setShowLabels] = useState<boolean>(true);
   const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
   const [showSettingsPopover, setShowSettingsPopover] = useState<boolean>(false);
+  const [showExploreMenu, setShowExploreMenu] = useState<boolean>(false);
+  const [showFpsDebug, setShowFpsDebug] = useState<boolean>(false);
+  const [practiceLampOn, setPracticeLampOn] = useState<boolean>(true);
   const [drawerOpen, setDrawerOpen] = useState<boolean>(launchRoute.openDrawerParams);
   const [drawerTab, setDrawerTab] = useState<DrawerTab>(
     launchRoute.openDrawerParams ? 'params' : 'display'
@@ -315,6 +320,10 @@ export const SimulationLab: React.FC<SimulationLabProps> = ({
         setDrawerOpen(false);
         return;
       }
+      if (showExploreMenu) {
+        setShowExploreMenu(false);
+        return;
+      }
       if (showSettingsPopover) {
         setShowSettingsPopover(false);
         return;
@@ -346,6 +355,7 @@ export const SimulationLab: React.FC<SimulationLabProps> = ({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [
     drawerOpen,
+    showExploreMenu,
     showSettingsPopover,
     showHelpModal,
     activeHotspot2D,
@@ -1128,6 +1138,7 @@ export const SimulationLab: React.FC<SimulationLabProps> = ({
 
   const showFloatingBottomDock =
     viewMode === '3d' &&
+    worldZone !== 'OVERVIEW' &&
     worldZone !== 'BOARD' &&
     worldZone !== 'PRACTICE' &&
     !activeVisualQuiz;
@@ -1155,13 +1166,16 @@ export const SimulationLab: React.FC<SimulationLabProps> = ({
           </span>
         </div>
 
-        {/* Minimal utility actions: Toàn cảnh | Hướng dẫn | Cài đặt */}
+        {/* Minimal utility actions: Toàn cảnh | Khám phá | Hướng dẫn | Cài đặt */}
         <div className="relative flex items-center gap-1.5 shrink-0">
           {worldZone !== 'OVERVIEW' && (
             <button
               type="button"
               data-testid="lab-overview-btn"
-              onClick={handleGoOverview}
+              onClick={() => {
+                setShowExploreMenu(false);
+                handleGoOverview();
+              }}
               className="min-h-[36px] inline-flex items-center gap-1.5 px-2.5 sm:px-3 rounded-md border border-[#324D54] bg-[#132227] text-xs font-medium text-[#EDF4F1] hover:border-[#78D4C4] cursor-pointer whitespace-nowrap"
             >
               <Compass className="w-3.5 h-3.5 text-[#78D4C4]" />
@@ -1169,10 +1183,33 @@ export const SimulationLab: React.FC<SimulationLabProps> = ({
             </button>
           )}
 
+          {/* Compact Zone Explorer Dropdown (replaces permanent bottom nav bar in Overview) */}
+          <button
+            type="button"
+            data-testid="lab-explore-btn"
+            aria-expanded={showExploreMenu}
+            aria-haspopup="menu"
+            onClick={() => {
+              setShowHelpModal(false);
+              setShowSettingsPopover(false);
+              setShowExploreMenu((v) => !v);
+            }}
+            className={`min-h-[36px] inline-flex items-center gap-1.5 px-2.5 rounded-md border text-xs font-medium transition-colors cursor-pointer whitespace-nowrap ${
+              showExploreMenu
+                ? 'border-[#78D4C4] bg-[#163036] text-[#78D4C4]'
+                : 'border-[#324D54] bg-[#132227] text-[#EDF4F1] hover:border-[#78D4C4]'
+            }`}
+          >
+            <Compass className="w-3.5 h-3.5 text-[#78D4C4]" />
+            <span>Khám phá</span>
+            <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showExploreMenu ? 'rotate-180' : ''}`} />
+          </button>
+
           <button
             type="button"
             data-testid="lab-help-btn"
             onClick={() => {
+              setShowExploreMenu(false);
               setShowSettingsPopover(false);
               setShowHelpModal((v) => !v);
             }}
@@ -1187,6 +1224,7 @@ export const SimulationLab: React.FC<SimulationLabProps> = ({
             type="button"
             data-testid="lab-settings-btn"
             onClick={() => {
+              setShowExploreMenu(false);
               setShowHelpModal(false);
               setShowSettingsPopover((v) => !v);
             }}
@@ -1200,6 +1238,75 @@ export const SimulationLab: React.FC<SimulationLabProps> = ({
             <Settings className="w-3.5 h-3.5 text-[#E3A678]" />
             <span className="hidden sm:inline">Cài đặt</span>
           </button>
+
+          {/* Compact Zone Navigation Dropdown Menu */}
+          {showExploreMenu && (
+            <div
+              role="menu"
+              aria-label="Chọn khu vực phòng thí nghiệm 3D"
+              data-testid="lab-explore-menu"
+              className="absolute right-0 top-11 z-50 w-[264px] rounded-xl border border-[#78D4C4]/70 bg-[#101E22] p-2 shadow-2xl space-y-1 text-xs"
+            >
+              <div className="px-2.5 py-1.5 text-[10px] font-mono uppercase tracking-wider text-[#78D4C4] border-b border-[#22373E]">
+                Chuyển nhanh khu vực phòng lab
+              </div>
+              <button
+                type="button"
+                role="menuitem"
+                data-testid="zone-tab-board"
+                onClick={() => {
+                  setShowExploreMenu(false);
+                  handleOpenBoard();
+                }}
+                className="w-full min-h-[38px] px-2.5 rounded-lg text-left flex items-center justify-between gap-2 text-[#EDF4F1] hover:bg-[#193036] cursor-pointer"
+              >
+                <span className="inline-flex items-center gap-2 font-medium">
+                  <BookOpen className="w-4 h-4 text-[#78D4C4]" />
+                  Bảng học 3D (10 bài)
+                </span>
+                <ChevronRight className="w-3.5 h-3.5 text-[#78D4C4]" />
+              </button>
+
+              {(['pin-zn-cu', 'dien-phan-cuso4', 'dien-phan-nacl'] as LabExperimentId[]).map((stId) => (
+                <button
+                  key={stId}
+                  type="button"
+                  role="menuitem"
+                  data-testid={`station-tab-${stId}`}
+                  onClick={() => {
+                    setShowExploreMenu(false);
+                    handleSelectStation(stId);
+                  }}
+                  className="w-full min-h-[38px] px-2.5 rounded-lg text-left flex items-center justify-between gap-2 text-[#EDF4F1] hover:bg-[#193036] cursor-pointer"
+                >
+                  <span className="inline-flex items-center gap-2 font-medium">
+                    <span className="font-mono text-[10px] text-[#78D4C4] w-5">
+                      {LAB_TABLES[stId].shortCode.slice(0, 2)}
+                    </span>
+                    <ChemText text={LAB_TABLES[stId].badgeLabel} />
+                  </span>
+                  <ChevronRight className="w-3.5 h-3.5 text-[#6D8B91]" />
+                </button>
+              ))}
+
+              <button
+                type="button"
+                role="menuitem"
+                data-testid="zone-tab-practice"
+                onClick={() => {
+                  setShowExploreMenu(false);
+                  handleOpenPractice();
+                }}
+                className="w-full min-h-[38px] px-2.5 rounded-lg text-left flex items-center justify-between gap-2 text-[#F8D8BC] bg-[#241A14]/70 hover:bg-[#322219] border border-[#E3A678]/45 cursor-pointer"
+              >
+                <span className="inline-flex items-center gap-2 font-semibold">
+                  <FileText className="w-4 h-4 text-[#F0B988]" />
+                  04 · Bàn luyện tập 3D
+                </span>
+                <ChevronRight className="w-3.5 h-3.5 text-[#F0B988]" />
+              </button>
+            </div>
+          )}
 
           {/* Settings Popover (Graphics Quality, Sound FX, Camera Speed, Labels, Reduced Motion, 2D) */}
           {showSettingsPopover && (
@@ -1326,6 +1433,22 @@ export const SimulationLab: React.FC<SimulationLabProps> = ({
 
                 <button
                   type="button"
+                  data-testid="lab-fps-toggle-btn"
+                  aria-pressed={showFpsDebug}
+                  onClick={() => setShowFpsDebug((v) => !v)}
+                  className="w-full min-h-[36px] px-3 rounded border border-[#2C434A] bg-[#0F1B1F] flex items-center justify-between text-[#EDF4F1] hover:border-[#78D4C4] cursor-pointer"
+                >
+                  <span className="inline-flex items-center gap-1.5">
+                    <Gauge className="w-3.5 h-3.5 text-[#78D4C4]" />
+                    Hiển thị FPS (Debug)
+                  </span>
+                  <span className={showFpsDebug ? 'text-[#78D4C4] font-mono' : 'text-[#8FA5A8] font-mono'}>
+                    {showFpsDebug ? 'Bật' : 'Tắt'}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
                   data-testid="lab-toggle-2d-btn"
                   onClick={() => {
                     setViewMode((m) => (m === '3d' ? '2d' : '3d'));
@@ -1365,6 +1488,8 @@ export const SimulationLab: React.FC<SimulationLabProps> = ({
                 microOptions={microOptions}
                 macroOptions={macroOptions}
                 graphicsQuality={graphicsQuality}
+                practiceLampOn={practiceLampOn}
+                showFpsDebug={showFpsDebug}
                 trackedSpecies={trackedSpecies}
                 cameraSpeedMode={cameraSpeedMode}
                 practiceFlipNonce={practiceFlipNonce}
@@ -1424,6 +1549,11 @@ export const SimulationLab: React.FC<SimulationLabProps> = ({
                     lastQuizResult={progress.lastQuizResult}
                     completedDeckIds={progress.completedDeckIds}
                     reducedMotion={reducedMotion}
+                    practiceLampOn={practiceLampOn}
+                    onTogglePracticeLamp={() => {
+                      playLabSound('switch', soundEnabled);
+                      setPracticeLampOn((v) => !v);
+                    }}
                     onUpdateSession={setPracticeSession}
                     onTriggerPageFlip={() => {
                       playLabSound('paper', soundEnabled);
@@ -2388,58 +2518,17 @@ export const SimulationLab: React.FC<SimulationLabProps> = ({
               </div>
             )}
 
-            {/* === CONTEXTUAL FLOATING BOTTOM DOCK (MINIMAL BUTTONS, ALWAYS IN VIEWPORT) === */}
+            {/* === CONTEXTUAL FLOATING BOTTOM DOCK (EXPERIMENT FOCUSED ONLY — ZERO BAR IN OVERVIEW) === */}
             {showFloatingBottomDock && (
               <div
                 data-testid="lab-bottom-dock"
                 className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 max-w-[calc(100%-16px)]"
               >
-                {worldZone === 'OVERVIEW' ? (
-                  /* OVERVIEW: Compact single-row quick zone bar */
-                  <div
-                    role="group"
-                    aria-label="Chuyển nhanh khu vực phòng thí nghiệm 3D"
-                    className="flex items-center gap-1.5 rounded-xl border border-[#2B434A] bg-[#0D1A1E]/95 p-1.5 shadow-2xl overflow-x-auto"
-                  >
-                    <button
-                      type="button"
-                      data-testid="zone-tab-board"
-                      onClick={() => handleOpenBoard()}
-                      className="min-h-[36px] sm:min-h-[38px] inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 rounded-lg border border-[#2B434A] bg-[#122227] text-[11px] sm:text-xs font-medium text-[#EDF4F1] hover:border-[#78D4C4] hover:text-[#78D4C4] cursor-pointer whitespace-nowrap"
-                    >
-                      <BookOpen className="hidden sm:inline w-3.5 h-3.5 text-[#78D4C4]" />
-                      Bảng học
-                    </button>
-
-                    {(['pin-zn-cu', 'dien-phan-cuso4', 'dien-phan-nacl'] as LabExperimentId[]).map((stId) => (
-                      <button
-                        key={stId}
-                        type="button"
-                        data-testid={`station-tab-${stId}`}
-                        onClick={() => handleSelectStation(stId)}
-                        className="min-h-[36px] sm:min-h-[38px] px-2 sm:px-3 rounded-lg border border-[#2B434A] bg-[#122227] text-[11px] sm:text-xs font-medium text-[#EDF4F1] hover:border-[#78D4C4] hover:text-[#78D4C4] cursor-pointer whitespace-nowrap"
-                      >
-                        <ChemText text={LAB_TABLES[stId].badgeLabel} />
-                      </button>
-                    ))}
-
-                    <button
-                      type="button"
-                      data-testid="zone-tab-practice"
-                      onClick={handleOpenPractice}
-                      className="min-h-[36px] sm:min-h-[38px] inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 rounded-lg border border-[#E3A678]/80 bg-[#261B14] text-[11px] sm:text-xs font-semibold text-[#F8D8BC] hover:bg-[#35241A] cursor-pointer whitespace-nowrap"
-                    >
-                      <FileText className="hidden sm:inline w-3.5 h-3.5 text-[#F0B988]" />
-                      Luyện tập
-                    </button>
-                  </div>
-                ) : (
-                  /* EXPERIMENT FOCUSED (MACRO / OBJECT / REACTION / MICRO): Only 6 essential contextual controls */
-                  <div
-                    role="toolbar"
-                    aria-label="Điều khiển thí nghiệm 3D"
-                    className="flex items-center gap-1.5 rounded-xl border border-[#2B434A] bg-[#0D1A1E]/95 p-1.5 shadow-2xl overflow-x-auto"
-                  >
+                <div
+                  role="toolbar"
+                  aria-label="Điều khiển thí nghiệm 3D"
+                  className="flex items-center gap-1.5 rounded-xl border border-[#2B434A] bg-[#0D1A1E]/95 p-1.5 shadow-2xl overflow-x-auto"
+                >
                     {/* 1. Phát / Tạm dừng */}
                     <button
                       type="button"
@@ -2557,11 +2646,10 @@ export const SimulationLab: React.FC<SimulationLabProps> = ({
                           : 'border-[#30484F] bg-[#132227] text-[#EDF4F1] hover:border-[#78D4C4]'
                       }`}
                     >
-                      <SlidersHorizontal className="w-3.5 h-3.5 text-[#78D4C4]" />
-                      Thêm
-                    </button>
-                  </div>
-                )}
+                    <SlidersHorizontal className="w-3.5 h-3.5 text-[#78D4C4]" />
+                    Thêm
+                  </button>
+                </div>
               </div>
             )}
           </>

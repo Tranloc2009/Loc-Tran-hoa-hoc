@@ -42,6 +42,7 @@ import { formatViNumber } from '../../utils/faraday';
 import { ChemText } from '../ChemText';
 import {
   LabSceneRig,
+  applyLabGraphicsTierMaterials,
   buildLabScene,
   disposeLabScene,
   updateLabSceneVisuals,
@@ -86,6 +87,8 @@ interface Lab3DCanvasProps {
   microOptions: MicroDisplayOptions;
   macroOptions?: MacroDisplayOptions;
   graphicsQuality?: GraphicsQualityTier;
+  practiceLampOn?: boolean;
+  showFpsDebug?: boolean;
   trackedSpecies: IonSpeciesId | null;
   cameraSpeedMode: CameraSpeedMode;
   practiceFlipNonce: number;
@@ -190,6 +193,8 @@ export const Lab3DCanvas = React.forwardRef<Lab3DCanvasHandle, Lab3DCanvasProps>
       microOptions,
       macroOptions = DEFAULT_MACRO_OPTIONS,
       graphicsQuality = 'auto',
+      practiceLampOn = true,
+      showFpsDebug = false,
       trackedSpecies,
       cameraSpeedMode,
       practiceFlipNonce,
@@ -224,15 +229,16 @@ export const Lab3DCanvas = React.forwardRef<Lab3DCanvasHandle, Lab3DCanvasProps>
     const [webglUnavailable, setWebglUnavailable] = useState(false);
     const [contextLost, setContextLost] = useState(false);
     const [effectiveTier, setEffectiveTier] = useState<'ultra' | 'high' | 'standard'>('high');
+    const [fpsReadout, setFpsReadout] = useState<number>(60);
     const [overlayState, setOverlayState] = useState<ProjectedOverlayState>({
       viewportW: 1200,
       viewportH: 640,
-      boardBadge: { x: 260, y: 150, visible: false },
-      practiceBadge: { x: 960, y: 500, visible: false },
+      boardBadge: { x: 600, y: 120, visible: false },
+      practiceBadge: { x: 840, y: 490, visible: false },
       tables: {
-        'pin-zn-cu': { x: 260, y: 420, visible: false },
-        'dien-phan-cuso4': { x: 600, y: 420, visible: false },
-        'dien-phan-nacl': { x: 940, y: 420, visible: false },
+        'pin-zn-cu': { x: 360, y: 310, visible: false },
+        'dien-phan-cuso4': { x: 840, y: 310, visible: false },
+        'dien-phan-nacl': { x: 360, y: 490, visible: false },
       },
       microChips: [],
       macroCallouts: [],
@@ -246,6 +252,7 @@ export const Lab3DCanvas = React.forwardRef<Lab3DCanvasHandle, Lab3DCanvasProps>
 
     // Three.js runtime refs
     const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+    const sunShaftOpacityRef = useRef<number>(0.78);
     const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
     const controlsRef = useRef<OrbitControls | null>(null);
     const rigRef = useRef<LabSceneRig | null>(null);
@@ -358,13 +365,14 @@ export const Lab3DCanvas = React.forwardRef<Lab3DCanvasHandle, Lab3DCanvasProps>
       mount.appendChild(renderer.domElement);
       rendererRef.current = renderer;
 
-      const camera = new THREE.PerspectiveCamera(42, width / height, 0.1, 65);
+      const initAspect = width / height;
+      const camera = new THREE.PerspectiveCamera(initAspect < 0.85 ? 52 : 42, initAspect, 0.1, 65);
       const initialPreset = getWorldCameraPreset({
         zone: propsRef.current.worldZone,
         station: propsRef.current.selectedStation,
         objectId: propsRef.current.selectedObject,
         microZone: propsRef.current.microZone,
-        aspect: width / height,
+        aspect: initAspect,
       });
       camera.position.set(initialPreset.position.x, initialPreset.position.y, initialPreset.position.z);
       cameraRef.current = camera;
@@ -372,12 +380,24 @@ export const Lab3DCanvas = React.forwardRef<Lab3DCanvasHandle, Lab3DCanvasProps>
       const rig = buildLabScene(renderer, isSoftwareGl);
       rigRef.current = rig;
 
-      // Mandatory procedural studio reflection map on every device
+      // Apply initial graphics tier materials, controlled RoomEnvironment IBL & shadow map resolution
+      rig.keyLight.castShadow = initProfile.shadowsEnabled;
+      rig.keyLight.shadow.mapSize.set(initProfile.shadowMapSize, initProfile.shadowMapSize);
+      rig.scene.environmentIntensity = initProfile.envMapIntensity;
+      applyLabGraphicsTierMaterials(rig, {
+        transmissionEnabled: initProfile.transmissionEnabled,
+        envMapIntensity: initProfile.envMapIntensity,
+        sunShaftOpacity: initProfile.sunShaftOpacity,
+      });
+      sunShaftOpacityRef.current = initProfile.sunShaftOpacity;
+
+      // Mandatory procedural studio reflection map on every device (capped by scene.environmentIntensity)
       const pmrem = new THREE.PMREMGenerator(renderer);
       const envRT = pmrem.fromScene(new RoomEnvironment(), 0.04);
       rig.scene.environment = envRT.texture;
       pmrem.dispose();
 
+      // Pre-warm shaders on GPU without multi-pass bloom washout (native hardware MSAA + ACESFilmic)
       if (!isSoftwareGl) {
         renderer.compile(rig.scene, camera);
       }
@@ -464,7 +484,7 @@ export const Lab3DCanvas = React.forwardRef<Lab3DCanvasHandle, Lab3DCanvasProps>
         const boardBadge = projectWorldPoint(
           {
             x: WORLD_ANCHORS.boardCenter.x,
-            y: WORLD_ANCHORS.boardCenter.y + 1.25,
+            y: WORLD_ANCHORS.boardCenter.y + 1.24,
             z: WORLD_ANCHORS.boardCenter.z + 0.1,
           },
           w,
@@ -473,8 +493,8 @@ export const Lab3DCanvas = React.forwardRef<Lab3DCanvasHandle, Lab3DCanvasProps>
         const practiceBadge = projectWorldPoint(
           {
             x: WORLD_ANCHORS.practiceDesk.x,
-            y: TABLE_TOP_Y + 0.36,
-            z: WORLD_ANCHORS.practiceDesk.z + 0.55,
+            y: TABLE_TOP_Y - 0.12,
+            z: WORLD_ANCHORS.practiceDesk.z + 0.82,
           },
           w,
           h
@@ -482,17 +502,17 @@ export const Lab3DCanvas = React.forwardRef<Lab3DCanvasHandle, Lab3DCanvasProps>
 
         const tableProj: Record<LabExperimentId, ProjectedPoint> = {
           'pin-zn-cu': projectWorldPoint(
-            { x: TABLE_POSITIONS['pin-zn-cu'].x, y: TABLE_TOP_Y + 0.05, z: TABLE_POSITIONS['pin-zn-cu'].z + 0.92 },
+            { x: TABLE_POSITIONS['pin-zn-cu'].x, y: TABLE_TOP_Y - 0.12, z: TABLE_POSITIONS['pin-zn-cu'].z + 0.82 },
             w,
             h
           ),
           'dien-phan-cuso4': projectWorldPoint(
-            { x: TABLE_POSITIONS['dien-phan-cuso4'].x, y: TABLE_TOP_Y + 0.05, z: TABLE_POSITIONS['dien-phan-cuso4'].z + 0.92 },
+            { x: TABLE_POSITIONS['dien-phan-cuso4'].x, y: TABLE_TOP_Y - 0.12, z: TABLE_POSITIONS['dien-phan-cuso4'].z + 0.82 },
             w,
             h
           ),
           'dien-phan-nacl': projectWorldPoint(
-            { x: TABLE_POSITIONS['dien-phan-nacl'].x, y: TABLE_TOP_Y + 0.05, z: TABLE_POSITIONS['dien-phan-nacl'].z + 0.92 },
+            { x: TABLE_POSITIONS['dien-phan-nacl'].x, y: TABLE_TOP_Y - 0.12, z: TABLE_POSITIONS['dien-phan-nacl'].z + 0.82 },
             w,
             h
           ),
@@ -684,6 +704,7 @@ export const Lab3DCanvas = React.forwardRef<Lab3DCanvasHandle, Lab3DCanvasProps>
           return;
         }
         const sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+        const startedAt = performance.now();
         gl.flush();
         const poll = () => {
           if (disposed) {
@@ -691,26 +712,42 @@ export const Lab3DCanvas = React.forwardRef<Lab3DCanvasHandle, Lab3DCanvasProps>
             return;
           }
           const state = sync ? gl.getSyncParameter(sync, gl.SYNC_STATUS) : gl.SIGNALED;
-          if (state === gl.UNSIGNALED) {
-            frameId = window.setTimeout(poll, 5);
+          if (state === gl.UNSIGNALED && performance.now() - startedAt < 450) {
+            frameId = window.setTimeout(poll, 8);
           } else {
             if (sync) gl.deleteSync(sync);
-            frameId = window.setTimeout(cb, 75);
+            frameId = window.setTimeout(cb, 65);
           }
         };
-        frameId = window.setTimeout(poll, 5);
+        frameId = window.setTimeout(poll, 8);
       }
+
+      let lastFrameTimestamp = performance.now();
+      let smoothedFps = 60;
+      let lastFpsPush = 0;
 
       function renderOneFrame() {
         if (disposed) return;
         renderDirty = false;
+
+        const nowMs = performance.now();
+        const frameDtMs = nowMs - lastFrameTimestamp;
+        lastFrameTimestamp = nowMs;
+        if (propsRef.current.showFpsDebug && frameDtMs > 4 && frameDtMs < 1000) {
+          const instFps = 1000 / frameDtMs;
+          smoothedFps = smoothedFps * 0.8 + instFps * 0.2;
+          if (nowMs - lastFpsPush >= 380) {
+            lastFpsPush = nowMs;
+            setFpsReadout(Math.max(1, Math.min(144, Math.round(smoothedFps))));
+          }
+        }
 
         const cur = propsRef.current;
         const tr = transitionRef.current;
         let needsFollowup = false;
 
         if (tr.active) {
-          const elapsed = performance.now() - tr.startTime;
+          const elapsed = nowMs - tr.startTime;
           const rawT = tr.durationMs <= 1 ? 1 : Math.min(1, elapsed / tr.durationMs);
           const eased = easeInOutCubic(rawT);
           const pos = interpolateVec3(tr.fromPos, tr.toPos, eased);
@@ -729,7 +766,7 @@ export const Lab3DCanvas = React.forwardRef<Lab3DCanvasHandle, Lab3DCanvasProps>
         // Practice Desk 3D page-flip angle
         let practiceFlipAngle = 0;
         if (pageFlipRef.current.active) {
-          const dt = performance.now() - pageFlipRef.current.startTime;
+          const dt = nowMs - pageFlipRef.current.startTime;
           const dur = cur.reducedMotion ? 1 : 380;
           const frac = Math.min(1, dt / dur);
           practiceFlipAngle = easeInOutCubic(frac) * Math.PI;
@@ -760,6 +797,9 @@ export const Lab3DCanvas = React.forwardRef<Lab3DCanvasHandle, Lab3DCanvasProps>
             microShowArrows: cur.microOptions.showArrows,
             practiceFlipAngle,
             practiceOpenLift: cur.worldZone === 'PRACTICE' ? 1 : 0,
+            practiceLampOn: cur.practiceLampOn ?? true,
+            sunShaftOpacity: sunShaftOpacityRef.current,
+            clockTimeMs: nowMs,
             visualQuizCandidates: cur.visualQuiz?.active ? cur.visualQuiz.candidateObjects : null,
             visualQuizSelected: cur.visualQuiz?.active ? cur.visualQuiz.selectedObjectId : null,
             macroOptions: cur.macroOptions ?? DEFAULT_MACRO_OPTIONS,
@@ -941,40 +981,59 @@ export const Lab3DCanvas = React.forwardRef<Lab3DCanvasHandle, Lab3DCanvasProps>
       renderer.domElement.addEventListener('pointermove', onPointerMove);
       renderer.domElement.addEventListener('pointerleave', onPointerLeave);
 
-      // ResizeObserver for crisp desktop <-> 390px mobile resizing
+      // ResizeObserver for crisp desktop <-> 390px mobile resizing (zero blank-canvas flash!)
       const resizeObserver = new ResizeObserver(() => {
         if (disposed) return;
         const w = Math.max(280, outer.clientWidth);
         const h = Math.max(320, outer.clientHeight);
-        camera.aspect = w / h;
+        const aspect = w / h;
+        camera.fov = aspect < 0.85 ? 52 : 42;
+        camera.aspect = aspect;
         camera.updateProjectionMatrix();
         renderer.setSize(w, h, false);
 
-        if (propsRef.current.worldZone === 'OVERVIEW' && !transitionRef.current.active) {
+        if (propsRef.current.worldZone === 'OVERVIEW') {
           const fit = getWorldCameraPreset({
             zone: 'OVERVIEW',
             station: null,
             objectId: null,
             microZone: propsRef.current.microZone,
-            aspect: w / h,
+            aspect,
           });
+          transitionRef.current.active = false;
           camera.position.set(fit.position.x, fit.position.y, fit.position.z);
           controls.target.set(fit.target.x, fit.target.y, fit.target.z);
           controls.maxDistance = fit.maxDistance;
           controls.update();
         }
-        requestRender();
+        // Always paint immediately after setSize() so the resized backbuffer is NEVER blank/transparent
+        renderer.render(rig.scene, camera);
+        syncProjectedOverlays(true);
+        if (!renderBusy) {
+          renderBusy = true;
+          renderOneFrame();
+        } else {
+          renderDirty = true;
+        }
       });
       resizeObserver.observe(outer);
 
+      // Gentle 1-second wall clock tick on GPU devices (skipped on software WebGL to keep screenshots rock-steady)
+      const clockIntervalId = !isSoftwareGl
+        ? window.setInterval(() => {
+            if (!disposed) requestRender();
+          }, 1000)
+        : 0;
+
       // Paint initial frame synchronously so the room is immediately visible on first paint
+      renderBusy = true;
       renderOneFrame();
-      requestRender();
 
       return () => {
         disposed = true;
         window.cancelAnimationFrame(frameId);
         window.clearTimeout(frameId);
+        if (clockIntervalId) window.clearInterval(clockIntervalId);
         resizeObserver.disconnect();
         controls.removeEventListener('start', onControlsStart);
         controls.removeEventListener('change', onControlsChange);
@@ -1042,8 +1101,21 @@ export const Lab3DCanvas = React.forwardRef<Lab3DCanvasHandle, Lab3DCanvasProps>
       renderer.setPixelRatio(profile.maxPixelRatio);
       renderer.shadowMap.enabled = profile.shadowsEnabled;
       rig.keyLight.castShadow = profile.shadowsEnabled;
+      if (rig.keyLight.shadow.mapSize.x !== profile.shadowMapSize) {
+        rig.keyLight.shadow.mapSize.set(profile.shadowMapSize, profile.shadowMapSize);
+        rig.keyLight.shadow.map?.dispose();
+        rig.keyLight.shadow.map = null;
+      }
       renderer.toneMappingExposure = profile.exposure;
       renderer.shadowMap.needsUpdate = true;
+      rig.scene.environmentIntensity = profile.envMapIntensity;
+
+      applyLabGraphicsTierMaterials(rig, {
+        transmissionEnabled: profile.transmissionEnabled,
+        envMapIntensity: profile.envMapIntensity,
+        sunShaftOpacity: profile.sunShaftOpacity,
+      });
+      sunShaftOpacityRef.current = profile.sunShaftOpacity;
       requestRenderRef.current();
     }, [graphicsQuality]);
 
@@ -1054,7 +1126,7 @@ export const Lab3DCanvas = React.forwardRef<Lab3DCanvasHandle, Lab3DCanvasProps>
       requestRenderRef.current();
     }, [practiceFlipNonce]);
 
-    // Re-render whenever visuals, microFrame, macroOptions, or quiz state change
+    // Re-render whenever visuals, microFrame, macroOptions, lamp, or quiz state change
     useEffect(() => {
       requestRenderRef.current();
     }, [
@@ -1063,6 +1135,7 @@ export const Lab3DCanvas = React.forwardRef<Lab3DCanvasHandle, Lab3DCanvasProps>
       microOptions,
       macroOptions,
       graphicsQuality,
+      practiceLampOn,
       trackedSpecies,
       visualQuiz,
       isRunning,
@@ -1205,21 +1278,14 @@ export const Lab3DCanvas = React.forwardRef<Lab3DCanvasHandle, Lab3DCanvasProps>
           }}
         />
 
-        {/* Overview Interactive Zone Badges (Smart Board + 3 Lab Tables + Practice Desk) */}
+        {/* Overview Interactive Zone Badges (Smart Board + Symmetrical 2x2 Desks) */}
         {worldZone === 'OVERVIEW' && showLabels && (() => {
           const isCompact = overlayState.viewportW < 540;
-          const bottomSafe = isCompact ? 86 : 80;
-          const naclPt = overlayState.tables['dien-phan-nacl'];
-          const naclBadgeY = Math.max(
-            84,
-            Math.min(overlayState.viewportH - (bottomSafe + 56), naclPt.y + (isCompact ? 4 : 6))
-          );
-          const practiceRawY = isCompact
-            ? Math.max(naclBadgeY + 52, overlayState.practiceBadge.y + 18)
-            : overlayState.practiceBadge.y;
+          const bottomSafe = isCompact ? 34 : 36;
+          const padX = isCompact ? 54 : 84;
           const practiceClampedY = Math.max(
-            110,
-            Math.min(overlayState.viewportH - bottomSafe, practiceRawY)
+            96,
+            Math.min(overlayState.viewportH - bottomSafe, overlayState.practiceBadge.y)
           );
 
           return (
@@ -1234,11 +1300,11 @@ export const Lab3DCanvas = React.forwardRef<Lab3DCanvasHandle, Lab3DCanvasProps>
                   style={{
                     transform: `translate(${Math.round(
                       Math.max(
-                        isCompact ? 68 : 76,
-                        Math.min(overlayState.viewportW - (isCompact ? 68 : 76), overlayState.boardBadge.x)
+                        isCompact ? 70 : 84,
+                        Math.min(overlayState.viewportW - (isCompact ? 70 : 84), overlayState.boardBadge.x)
                       )
                     )}px, ${Math.round(
-                      Math.max(38, Math.min(overlayState.viewportH - 140, overlayState.boardBadge.y - (isCompact ? 12 : 0)))
+                      Math.max(36, Math.min(overlayState.viewportH - 140, overlayState.boardBadge.y - (isCompact ? 8 : 0)))
                     )}px) translate(-50%, -50%)`,
                   }}
                   className={`pointer-events-auto absolute top-0 left-0 min-h-[42px] rounded-md border border-[#78D4C4] bg-[#0E2328]/95 text-[#EDF4F1] hover:bg-[#16363D] transition-colors shadow-lg cursor-pointer inline-flex items-center gap-1.5 focus-visible:outline-2 focus-visible:outline-[#78D4C4] ${
@@ -1257,16 +1323,15 @@ export const Lab3DCanvas = React.forwardRef<Lab3DCanvasHandle, Lab3DCanvasProps>
                 </button>
               )}
 
-              {/* 3 Experiment Tables */}
+              {/* 3 Experiment Tables on Symmetrical 2x2 Grid */}
               {(['pin-zn-cu', 'dien-phan-cuso4', 'dien-phan-nacl'] as LabExperimentId[]).map((stId) => {
                 const pt = overlayState.tables[stId];
                 if (!pt.visible) return null;
                 const meta = LAB_TABLES[stId];
-                const padX = isCompact ? 48 : 68;
                 const clampedX = Math.max(padX, Math.min(overlayState.viewportW - padX, pt.x));
                 const clampedY = Math.max(
-                  96,
-                  Math.min(overlayState.viewportH - (isCompact ? 96 : 76), pt.y + (isCompact ? 4 : 6))
+                  92,
+                  Math.min(overlayState.viewportH - bottomSafe, pt.y)
                 );
                 return (
                   <button
@@ -1292,7 +1357,7 @@ export const Lab3DCanvas = React.forwardRef<Lab3DCanvasHandle, Lab3DCanvasProps>
                 );
               })}
 
-              {/* Practice Desk Badge — prominent, warm illuminated "LUYỆN TẬP" callout */}
+              {/* Desk 04: Practice Desk Badge — aligned symmetrically on front-right of 2x2 grid */}
               {overlayState.practiceBadge.visible && (
                 <button
                   type="button"
@@ -1302,19 +1367,19 @@ export const Lab3DCanvas = React.forwardRef<Lab3DCanvasHandle, Lab3DCanvasProps>
                   style={{
                     transform: `translate(${Math.round(
                       Math.max(
-                        isCompact ? 76 : 92,
-                        Math.min(overlayState.viewportW - (isCompact ? 76 : 92), overlayState.practiceBadge.x)
+                        isCompact ? 68 : 92,
+                        Math.min(overlayState.viewportW - (isCompact ? 68 : 92), overlayState.practiceBadge.x)
                       )
                     )}px, ${Math.round(practiceClampedY)}px) translate(-50%, -50%)`,
                   }}
-                  className={`pointer-events-auto absolute top-0 left-0 min-h-[44px] rounded-lg border-2 border-[#E3A678] bg-[#261B14]/96 text-[#FAF6EC] hover:bg-[#38261B] hover:border-[#F5C698] transition-colors shadow-xl cursor-pointer inline-flex items-center gap-2 focus-visible:outline-2 focus-visible:outline-[#E3A678] ${
-                    isCompact ? 'px-2.5 py-1' : 'px-3.5 py-1.5'
+                  className={`pointer-events-auto absolute top-0 left-0 min-h-[42px] rounded-lg border-2 border-[#E3A678] bg-[#261B14]/96 text-[#FAF6EC] hover:bg-[#38261B] hover:border-[#F5C698] transition-colors shadow-xl cursor-pointer inline-flex items-center gap-1.5 sm:gap-2 focus-visible:outline-2 focus-visible:outline-[#E3A678] ${
+                    isCompact ? 'px-2 py-1' : 'px-3.5 py-1.5'
                   }`}
                 >
-                  <FileText className="w-4 h-4 text-[#F2BA86] shrink-0" />
+                  <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#F2BA86] shrink-0" />
                   <span className="text-left">
-                    <span className="flex items-center gap-1 text-[10px] font-mono tracking-wider text-[#F2BA86] font-bold leading-none">
-                      LUYỆN TẬP
+                    <span className="flex items-center gap-1 text-[9px] sm:text-[10px] font-mono tracking-wider text-[#F2BA86] font-bold leading-none">
+                      04 · LUYỆN TẬP
                       <HelpCircle className="w-3 h-3 opacity-85" />
                     </span>
                     <span className="block text-[11px] sm:text-xs font-semibold text-[#FAF6EC] whitespace-nowrap mt-0.5">
@@ -1629,6 +1694,16 @@ export const Lab3DCanvas = React.forwardRef<Lab3DCanvasHandle, Lab3DCanvasProps>
                 </div>
               </>
             )}
+          </div>
+        )}
+
+        {/* Opt-in Debug FPS Readout (OFF by default, toggleable in Settings) */}
+        {showFpsDebug && (
+          <div
+            data-testid="lab-fps-debug"
+            className="pointer-events-none absolute bottom-3 left-3 z-20 rounded-md border border-[#324D54] bg-[#0B1417]/90 px-2.5 py-1 text-[11px] font-mono tabular-nums text-[#78D4C4] shadow-lg"
+          >
+            {fpsReadout} FPS · {effectiveTier.toUpperCase()}
           </div>
         )}
 

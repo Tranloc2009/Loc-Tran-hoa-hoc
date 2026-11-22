@@ -151,14 +151,22 @@ export function computeGalvanicCellSnapshot(state: GalvanicCellState): GalvanicC
   };
 }
 
-// Table center X positions in the unified 3D laboratory room
+// Unified 2x2 architectural laboratory bench grid:
+// Back row (z = -1.05):  01 Pin Zn-Cu (left)   | 02 CuSO4 Electrolysis (right)
+// Front row (z = +2.15): 03 NaCl Electrolysis  | 04 Practice Desk (right, in WORLD_ANCHORS)
+export const LAB_BENCH_DIMENSIONS = {
+  width: 2.52,
+  depth: 1.56,
+  height: 0.92,
+} as const;
+
 export const TABLE_POSITIONS: Record<LabExperimentId, Vec3Tuple> = {
-  'pin-zn-cu': { x: -3.55, y: 0, z: 0.4 },
-  'dien-phan-cuso4': { x: 0, y: 0, z: 0.4 },
-  'dien-phan-nacl': { x: 3.55, y: 0, z: 0.4 },
+  'pin-zn-cu': { x: -2.25, y: 0, z: -1.05 },
+  'dien-phan-cuso4': { x: 2.25, y: 0, z: -1.05 },
+  'dien-phan-nacl': { x: -2.25, y: 0, z: 2.15 },
 };
 
-export const TABLE_TOP_Y = 0.92;
+export const TABLE_TOP_Y = LAB_BENCH_DIMENSIONS.height;
 
 export interface LabTableMeta {
   id: LabExperimentId;
@@ -480,17 +488,17 @@ export function getCameraPreset(
   const safeAspect = Number.isFinite(aspect) && aspect > 0.25 ? aspect : 16 / 9;
 
   if (level === 'OVERVIEW' || !station) {
-    // Fit full 3-table span (~10.5m) inside horizontal FOV for both desktop & narrow 390px portrait screens
+    // Fit the symmetrical 2x2 grid (span ~7.6m wide, front row at z=+2.15) cleanly on desktop & 390px mobile
     const halfVRad = (21 * Math.PI) / 180;
     const tanHalfH = Math.max(0.24, Math.tan(halfVRad) * safeAspect);
-    const requiredZ = 5.45 / tanHalfH;
-    const zDist = Math.max(7.9, Math.min(16.2, requiredZ * 0.94));
-    const yHeight = safeAspect < 1 ? 4.95 + (zDist - 8.0) * 0.32 : 5.25;
+    const requiredZ = 5.1 / tanHalfH;
+    const zDist = safeAspect < 1 ? Math.max(10.8, Math.min(16.8, requiredZ * 0.94)) : 8.85;
+    const yHeight = safeAspect < 1 ? 5.6 + (zDist - 10.8) * 0.28 : 4.45;
     return {
       position: { x: 0, y: yHeight, z: zDist },
-      target: { x: 0, y: 1.15, z: -0.25 },
+      target: { x: 0, y: 1.32, z: -0.1 },
       minDistance: 4.5,
-      maxDistance: Math.max(16, zDist * 1.45),
+      maxDistance: Math.max(17, zDist * 1.45),
     };
   }
 
@@ -500,12 +508,12 @@ export function getCameraPreset(
   if (level === 'TABLE') {
     return {
       position: {
-        x: base.x + 0.12,
-        y: 2.38 + (mobilePullback - 1) * 0.45,
-        z: base.z + 2.75 * mobilePullback,
+        x: base.x + 0.14,
+        y: 2.26 + (mobilePullback - 1) * 0.42,
+        z: base.z + 2.62 * mobilePullback,
       },
       target: { x: base.x, y: 1.26, z: base.z - 0.04 },
-      minDistance: 1.1,
+      minDistance: 1.05,
       maxDistance: 6.5,
     };
   }

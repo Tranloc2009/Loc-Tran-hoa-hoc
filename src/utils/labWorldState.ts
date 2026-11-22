@@ -9,6 +9,7 @@ import {
 } from './electrochemEngine';
 import {
   GalvanicCellSnapshot,
+  LAB_BENCH_DIMENSIONS,
   LAB_OBJECTS,
   LabExperimentId,
   LabObjectId,
@@ -40,12 +41,99 @@ export const CAMERA_SPEED_DURATION_MS: Record<CameraSpeedMode, number> = {
   slow: 1450,
 };
 
-// Coordinates of the expanded architectural laboratory room
+// Coordinates of the unified 2x2 architectural laboratory room:
+// Back wall center: Smart Teaching Board (x = 0) flanked by backlit glass cabinets
+// Back row:  01 Zn-Cu (-2.25, -1.05) | 02 CuSO4 (+2.25, -1.05)
+// Front row: 03 NaCl  (-2.25, +2.15) | 04 Practice Desk (+2.25, +2.15)
 export const WORLD_ANCHORS = {
-  boardCenter: { x: -3.55, y: 2.42, z: -3.65 } as Vec3Tuple,
-  practiceDesk: { x: 4.35, y: 0, z: 2.3 } as Vec3Tuple,
-  practicePaperCenter: { x: 4.35, y: 0.96, z: 2.26 } as Vec3Tuple,
+  boardCenter: { x: 0, y: 2.66, z: -3.72 } as Vec3Tuple,
+  practiceDesk: { x: 2.25, y: 0, z: 2.15 } as Vec3Tuple,
+  practicePaperCenter: { x: 2.25, y: 0.96, z: 2.12 } as Vec3Tuple,
 };
+
+export interface BenchBoundingBox2D {
+  id: 'pin-zn-cu' | 'dien-phan-cuso4' | 'dien-phan-nacl' | 'practice';
+  label: string;
+  center: Vec3Tuple;
+  minX: number;
+  maxX: number;
+  minZ: number;
+  maxZ: number;
+  width: number;
+  depth: number;
+  height: number;
+}
+
+export interface SpatialLayoutAudit {
+  boxes: BenchBoundingBox2D[];
+  hasOverlap: boolean;
+  overlappingPairs: Array<[string, string]>;
+  centerAisleX: number;
+  rowWalkwayZ: number;
+  practiceAlignedWithGrid: boolean;
+}
+
+/**
+ * Pure architectural bounding-box audit verifying all 4 laboratory benches sit on a
+ * non-overlapping, axis-aligned 2x2 grid with generous student walkways.
+ */
+export function validateLabSpatialLayout(): SpatialLayoutAudit {
+  const halfW = LAB_BENCH_DIMENSIONS.width / 2;
+  const halfD = LAB_BENCH_DIMENSIONS.depth / 2;
+  const entries: Array<{ id: BenchBoundingBox2D['id']; label: string; center: Vec3Tuple }> = [
+    { id: 'pin-zn-cu', label: '01 Pin Zn–Cu', center: TABLE_POSITIONS['pin-zn-cu'] },
+    { id: 'dien-phan-cuso4', label: '02 Điện phân CuSO₄', center: TABLE_POSITIONS['dien-phan-cuso4'] },
+    { id: 'dien-phan-nacl', label: '03 Điện phân NaCl', center: TABLE_POSITIONS['dien-phan-nacl'] },
+    { id: 'practice', label: '04 Bàn luyện tập', center: WORLD_ANCHORS.practiceDesk },
+  ];
+
+  const boxes: BenchBoundingBox2D[] = entries.map((e) => ({
+    id: e.id,
+    label: e.label,
+    center: e.center,
+    minX: e.center.x - halfW,
+    maxX: e.center.x + halfW,
+    minZ: e.center.z - halfD,
+    maxZ: e.center.z + halfD,
+    width: LAB_BENCH_DIMENSIONS.width,
+    depth: LAB_BENCH_DIMENSIONS.depth,
+    height: LAB_BENCH_DIMENSIONS.height,
+  }));
+
+  const overlappingPairs: Array<[string, string]> = [];
+  for (let i = 0; i < boxes.length; i += 1) {
+    for (let j = i + 1; j < boxes.length; j += 1) {
+      const a = boxes[i];
+      const b = boxes[j];
+      const overlapX = a.minX < b.maxX && a.maxX > b.minX;
+      const overlapZ = a.minZ < b.maxZ && a.maxZ > b.minZ;
+      if (overlapX && overlapZ) {
+        overlappingPairs.push([a.id, b.id]);
+      }
+    }
+  }
+
+  const zn = boxes[0];
+  const cu = boxes[1];
+  const nacl = boxes[2];
+  const prac = boxes[3];
+
+  const centerAisleX = Number((cu.minX - zn.maxX).toFixed(3));
+  const rowWalkwayZ = Number((nacl.minZ - zn.maxZ).toFixed(3));
+  const practiceAlignedWithGrid =
+    Math.abs(prac.center.x - cu.center.x) < 0.01 &&
+    Math.abs(prac.center.z - nacl.center.z) < 0.01 &&
+    Math.abs(prac.height - zn.height) < 0.001;
+
+  return {
+    boxes,
+    hasOverlap: overlappingPairs.length > 0,
+    overlappingPairs,
+    centerAisleX,
+    rowWalkwayZ,
+    practiceAlignedWithGrid,
+  };
+}
 
 // ============================================================================
 // 2. SIMULATION SPEED & DETERMINISTIC STEP ENGINE (0.25x -> 4x)
@@ -1528,17 +1616,26 @@ export function getWorldCameraPreset(args: {
   const safeAspect = Number.isFinite(aspect) && aspect > 0.25 ? aspect : 16 / 9;
 
   if (zone === 'OVERVIEW') {
-    // Fit Smart Board (back-left), 3 Lab Tables (center), and Practice Desk (front-right) cleanly!
-    const halfVRad = (21 * Math.PI) / 180;
-    const tanHalfH = Math.max(0.24, Math.tan(halfVRad) * safeAspect);
-    const requiredZ = 6.25 / tanHalfH;
-    const zDist = Math.max(9.6, Math.min(18.2, requiredZ * 0.96));
-    const yHeight = safeAspect < 1 ? 5.65 + (zDist - 9.6) * 0.34 : 5.75;
+    // Frame the symmetrical 2x2 grid (all 4 desks), centered Smart Board, left Redox wall, and sunlit right windows!
+    const isPortrait = safeAspect < 0.85;
+    const halfVRad = ((isPortrait ? 26 : 21) * Math.PI) / 180;
+    const tanHalfH = Math.max(0.22, Math.tan(halfVRad) * safeAspect);
+    const requiredZ = 3.72 / tanHalfH;
+    const zDist = isPortrait
+      ? Math.max(11.4, Math.min(14.8, requiredZ * 0.96))
+      : safeAspect < 1.25
+        ? Math.max(9.2, Math.min(12.4, requiredZ * 0.98))
+        : 8.75;
+    const yHeight = isPortrait
+      ? Math.min(5.35, 4.72 + (zDist - 11.4) * 0.14)
+      : safeAspect < 1.25
+        ? Math.min(4.95, 4.25 + (zDist - 8.75) * 0.18)
+        : 4.25;
     return {
-      position: { x: 0.2, y: yHeight, z: zDist },
-      target: { x: 0.15, y: 1.25, z: -0.1 },
+      position: { x: isPortrait ? 0 : -0.18, y: yHeight, z: zDist },
+      target: { x: isPortrait ? 0 : 0.15, y: 1.38, z: -0.15 },
       minDistance: 4.5,
-      maxDistance: Math.max(18, zDist * 1.45),
+      maxDistance: Math.max(17, zDist * 1.45),
     };
   }
 
@@ -1546,7 +1643,7 @@ export function getWorldCameraPreset(args: {
     const bc = WORLD_ANCHORS.boardCenter;
     const mobileBack = safeAspect < 0.95 ? 1.35 : 1;
     return {
-      position: { x: bc.x + 0.06, y: bc.y + 0.05, z: bc.z + 4.35 * mobileBack },
+      position: { x: bc.x, y: bc.y + 0.04, z: bc.z + 4.2 * mobileBack },
       target: { x: bc.x, y: bc.y, z: bc.z },
       minDistance: 2.2,
       maxDistance: 8.5,
@@ -1556,14 +1653,14 @@ export function getWorldCameraPreset(args: {
   if (zone === 'PRACTICE') {
     const pp = WORLD_ANCHORS.practicePaperCenter;
     const mobileBack = safeAspect < 0.95 ? 1.24 : 1;
-    // Frame the full 3D study corner: desk lamp, exam stack, open notebook, sticky notes, and plaque
+    // Centered architectural desk view framing the exam stack, spiral notebook, spun-brass lamp, sticky notes & plaque
     return {
       position: {
-        x: pp.x - 0.68 * mobileBack,
-        y: pp.y + 1.48 * mobileBack,
-        z: pp.z + 2.16 * mobileBack,
+        x: pp.x + 0.08 * mobileBack,
+        y: pp.y + 1.42 * mobileBack,
+        z: pp.z + 2.08 * mobileBack,
       },
-      target: { x: pp.x + 0.02, y: pp.y + 0.06, z: pp.z - 0.04 },
+      target: { x: pp.x, y: pp.y + 0.04, z: pp.z - 0.06 },
       minDistance: 1.05,
       maxDistance: 6.2,
     };
@@ -1720,6 +1817,9 @@ export interface EffectiveGraphicsProfile {
   envMapIntensity: number;
   exposure: number;
   particleDensity: number;
+  transmissionEnabled: boolean;
+  bloomEnabled: boolean;
+  sunShaftOpacity: number;
 }
 
 export function resolveEffectiveGraphicsProfile(args: {
@@ -1731,16 +1831,20 @@ export function resolveEffectiveGraphicsProfile(args: {
   const { preference, isSoftwareGl, viewportWidth, devicePixelRatio = 1 } = args;
   const isMobile = viewportWidth < 768;
 
-  // Software WebGL (SwiftShader / llvmpipe) always caps heavy rasterization costs while keeping full scene richness
+  // Software WebGL (SwiftShader / llvmpipe) skips multi-pass GPU bottlenecks (shadows, transmission)
+  // while matching the exact same natural ACESFilmic exposure, IBL balance, and sunlit atmosphere
   if (isSoftwareGl) {
     return {
       effectiveTier: 'standard',
       maxPixelRatio: 1,
       shadowsEnabled: false,
       shadowMapSize: 1024,
-      envMapIntensity: 0.95,
-      exposure: 1.06,
-      particleDensity: 0.75,
+      envMapIntensity: 0.44,
+      exposure: 0.9,
+      particleDensity: 0.78,
+      transmissionEnabled: false,
+      bloomEnabled: false,
+      sunShaftOpacity: 0.78,
     };
   }
 
@@ -1757,32 +1861,41 @@ export function resolveEffectiveGraphicsProfile(args: {
       maxPixelRatio: Math.min(2, Math.max(1, devicePixelRatio)),
       shadowsEnabled: true,
       shadowMapSize: 2048,
-      envMapIntensity: 1.12,
-      exposure: 1.08,
+      envMapIntensity: 0.48,
+      exposure: 0.92,
       particleDensity: 1,
+      transmissionEnabled: true,
+      bloomEnabled: false,
+      sunShaftOpacity: 0.88,
     };
   }
 
   if (resolved === 'high') {
     return {
       effectiveTier: 'high',
-      maxPixelRatio: Math.min(1.65, Math.max(1, devicePixelRatio)),
+      maxPixelRatio: Math.min(1.5, Math.max(1, devicePixelRatio)),
       shadowsEnabled: true,
       shadowMapSize: 1024,
-      envMapIntensity: 1.02,
-      exposure: 1.06,
-      particleDensity: 0.9,
+      envMapIntensity: 0.44,
+      exposure: 0.9,
+      particleDensity: 0.85,
+      transmissionEnabled: true,
+      bloomEnabled: false,
+      sunShaftOpacity: 0.72,
     };
   }
 
   return {
     effectiveTier: 'standard',
-    maxPixelRatio: 1.15,
+    maxPixelRatio: 1.0,
     shadowsEnabled: false,
     shadowMapSize: 1024,
-    envMapIntensity: 0.92,
-    exposure: 1.04,
-    particleDensity: 0.72,
+    envMapIntensity: 0.4,
+    exposure: 0.88,
+    particleDensity: 0.6,
+    transmissionEnabled: false,
+    bloomEnabled: false,
+    sunShaftOpacity: 0.45,
   };
 }
 

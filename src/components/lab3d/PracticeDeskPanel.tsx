@@ -8,6 +8,7 @@ import {
   Crosshair,
   FileText,
   FlaskConical,
+  Lightbulb,
   RotateCcw,
   Trophy,
   XCircle,
@@ -39,6 +40,8 @@ export interface PracticeDeskPanelProps {
   lastQuizResult: QuizResultSummary | null;
   completedDeckIds?: string[];
   reducedMotion?: boolean;
+  practiceLampOn?: boolean;
+  onTogglePracticeLamp?: () => void;
   onUpdateSession: (updater: (prev: PracticeSessionState) => PracticeSessionState) => void;
   onTriggerPageFlip: () => void;
   onObservePhenomenon: (target: {
@@ -79,6 +82,8 @@ export const PracticeDeskPanel: React.FC<PracticeDeskPanelProps> = ({
   lastQuizResult,
   completedDeckIds = [],
   reducedMotion = false,
+  practiceLampOn = true,
+  onTogglePracticeLamp,
   onUpdateSession,
   onTriggerPageFlip,
   onObservePhenomenon,
@@ -206,15 +211,34 @@ export const PracticeDeskPanel: React.FC<PracticeDeskPanelProps> = ({
               </div>
             </div>
 
-            <button
-              type="button"
-              data-testid="practice-back-room-btn"
-              onClick={onBackToRoom}
-              className="min-h-[40px] px-3.5 rounded-lg border border-[#C6BBA5] bg-white text-xs sm:text-sm font-semibold text-[#172429] hover:border-[#1D6E64] inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
-            >
-              <Compass className="w-4 h-4 text-[#1D6E64]" />
-              Về phòng
-            </button>
+            <div className="flex items-center gap-2 shrink-0">
+              {onTogglePracticeLamp && (
+                <button
+                  type="button"
+                  data-testid="practice-lamp-toggle-btn"
+                  aria-pressed={practiceLampOn}
+                  onClick={onTogglePracticeLamp}
+                  className={`min-h-[40px] px-3 rounded-lg border text-xs sm:text-sm font-semibold inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap transition-colors ${
+                    practiceLampOn
+                      ? 'border-[#C77B4C] bg-[#FFF4E6] text-[#8E4B1E] hover:bg-[#FDEBD2]'
+                      : 'border-[#C6BBA5] bg-white text-[#4A5B61] hover:border-[#9C572C]'
+                  }`}
+                >
+                  <Lightbulb className={`w-4 h-4 ${practiceLampOn ? 'text-[#C77B4C]' : 'text-[#7B8B90]'}`} />
+                  {practiceLampOn ? 'Đèn bàn: Bật' : 'Đèn bàn: Tắt'}
+                </button>
+              )}
+
+              <button
+                type="button"
+                data-testid="practice-back-room-btn"
+                onClick={onBackToRoom}
+                className="min-h-[40px] px-3.5 rounded-lg border border-[#C6BBA5] bg-white text-xs sm:text-sm font-semibold text-[#172429] hover:border-[#1D6E64] inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+              >
+                <Compass className="w-4 h-4 text-[#1D6E64]" />
+                Về phòng
+              </button>
+            </div>
           </div>
 
           <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3.5">
@@ -465,6 +489,22 @@ export const PracticeDeskPanel: React.FC<PracticeDeskPanelProps> = ({
             </div>
 
             <div className="flex items-center gap-2 shrink-0">
+              {onTogglePracticeLamp && (
+                <button
+                  type="button"
+                  data-testid="practice-lamp-toggle-btn"
+                  aria-pressed={practiceLampOn}
+                  onClick={onTogglePracticeLamp}
+                  className={`min-h-[38px] px-2.5 rounded-lg border text-xs font-semibold inline-flex items-center gap-1 cursor-pointer whitespace-nowrap transition-colors ${
+                    practiceLampOn
+                      ? 'border-[#C77B4C] bg-[#FFF4E6] text-[#8E4B1E] hover:bg-[#FDEBD2]'
+                      : 'border-[#C6BBA5] bg-white text-[#4A5B61] hover:border-[#9C572C]'
+                  }`}
+                >
+                  <Lightbulb className={`w-3.5 h-3.5 ${practiceLampOn ? 'text-[#C77B4C]' : 'text-[#7B8B90]'}`} />
+                  <span className="hidden sm:inline">{practiceLampOn ? 'Đèn: Bật' : 'Đèn: Tắt'}</span>
+                </button>
+              )}
               <button
                 type="button"
                 onClick={handleBackToDecks}

@@ -14,6 +14,7 @@ import {
   getWorldCameraPreset,
   resolveEffectiveGraphicsProfile,
   stepSimulationTime,
+  validateLabSpatialLayout,
 } from './labWorldState';
 import { computeElectrolysisAtTime, getDefaultParams } from './electrochemEngine';
 import { computeGalvanicCellSnapshot, createInitialGalvanicState } from './lab3dState';
@@ -263,6 +264,8 @@ test('Graphics quality tier resolver adapts cleanly across GPU desktop, mobile, 
   });
   assert.equal(sw.effectiveTier, 'standard');
   assert.equal(sw.shadowsEnabled, false);
+  assert.equal(sw.transmissionEnabled, false);
+  assert.equal(sw.bloomEnabled, false);
   assert.equal(sw.maxPixelRatio, 1);
 
   const deskAuto = resolveEffectiveGraphicsProfile({
@@ -273,6 +276,10 @@ test('Graphics quality tier resolver adapts cleanly across GPU desktop, mobile, 
   });
   assert.equal(deskAuto.effectiveTier, 'ultra');
   assert.equal(deskAuto.shadowsEnabled, true);
+  assert.equal(deskAuto.transmissionEnabled, true);
+  assert.equal(deskAuto.bloomEnabled, false);
+  assert.ok(deskAuto.exposure <= 0.95 && deskAuto.exposure >= 0.85);
+  assert.ok(deskAuto.envMapIntensity <= 0.55);
   assert.equal(deskAuto.shadowMapSize, 2048);
 
   const mobAuto = resolveEffectiveGraphicsProfile({
@@ -282,6 +289,8 @@ test('Graphics quality tier resolver adapts cleanly across GPU desktop, mobile, 
     devicePixelRatio: 2,
   });
   assert.equal(mobAuto.effectiveTier, 'high');
+  assert.equal(mobAuto.transmissionEnabled, true);
+  assert.equal(mobAuto.bloomEnabled, false);
   assert.equal(mobAuto.shadowMapSize, 1024);
 
   const explicitStd = resolveEffectiveGraphicsProfile({
@@ -292,6 +301,18 @@ test('Graphics quality tier resolver adapts cleanly across GPU desktop, mobile, 
   });
   assert.equal(explicitStd.effectiveTier, 'standard');
   assert.equal(explicitStd.shadowsEnabled, false);
+  assert.equal(explicitStd.transmissionEnabled, false);
+  assert.equal(explicitStd.bloomEnabled, false);
+});
+
+test('2x2 architectural room layout has zero bounding-box overlaps and symmetrical walkways', () => {
+  const audit = validateLabSpatialLayout();
+  assert.equal(audit.boxes.length, 4);
+  assert.equal(audit.hasOverlap, false);
+  assert.deepEqual(audit.overlappingPairs, []);
+  assert.ok(audit.centerAisleX >= 1.5, `Expected center aisle >= 1.5m, got ${audit.centerAisleX}`);
+  assert.ok(audit.rowWalkwayZ >= 1.2, `Expected row walkway >= 1.2m, got ${audit.rowWalkwayZ}`);
+  assert.equal(audit.practiceAlignedWithGrid, true);
 });
 
 test('Macro observation callouts stay scientifically accurate and honor display toggles', () => {
