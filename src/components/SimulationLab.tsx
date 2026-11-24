@@ -7,6 +7,7 @@ import {
   ChevronRight,
   Compass,
   Crosshair,
+  Download,
   Eye,
   FileText,
   Focus,
@@ -1149,7 +1150,7 @@ export const SimulationLab: React.FC<SimulationLabProps> = ({
       className="h-full w-full flex flex-col overflow-hidden bg-[#0D1619] text-[#EDF4F1]"
     >
       {/* === COMPACT SINGLE-ROW TOP HUD BAR (~48px) === */}
-      <header className="shrink-0 h-12 px-2.5 sm:px-4 border-b border-[#1E2F35] bg-[#0B1417] flex items-center justify-between gap-2 z-30">
+      <header className="relative shrink-0 h-12 px-2.5 sm:px-4 border-b border-[#1E2F35] bg-[#0B1417] flex items-center justify-between gap-2 z-40">
         <div className="min-w-0 flex items-center gap-1.5 sm:gap-3">
           <button
             type="button"
@@ -1461,6 +1462,22 @@ export const SimulationLab: React.FC<SimulationLabProps> = ({
                     {viewMode === '3d' ? 'Chuyển sang mô phỏng 2D' : 'Quay lại phòng lab 3D'}
                   </span>
                 </button>
+
+                {typeof window !== 'undefined' && window.location.protocol !== 'file:' && (
+                  <a
+                    href="/Hoa_Hoc_12_Phong_Thi_Nghiem_3D.html"
+                    download="Hoa_Hoc_12_Phong_Thi_Nghiem_3D.html"
+                    data-testid="lab-download-standalone-btn"
+                    onClick={() => setShowSettingsPopover(false)}
+                    className="w-full min-h-[38px] px-3 rounded border border-[#2D6E64] bg-[#102624] flex items-center justify-between text-[#8FE3D4] hover:bg-[#163330] cursor-pointer font-medium"
+                  >
+                    <span className="inline-flex items-center gap-1.5">
+                      <Download className="w-3.5 h-3.5" />
+                      Tải bản nộp offline (.html)
+                    </span>
+                    <span className="font-mono text-[10px] text-[#78D4C4]/80">1 file</span>
+                  </a>
+                )}
               </div>
             </div>
           )}

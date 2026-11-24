@@ -15,7 +15,8 @@ let routeNonceCounter = 1;
 
 function parseWorldRouteFromLocation(): WorldLaunchRoute {
   const rawHash = window.location.hash.replace(/^#/, '');
-  const candidate = rawHash || window.location.pathname;
+  const isFileProtocol = window.location.protocol === 'file:';
+  const candidate = rawHash || (isFileProtocol ? '/' : window.location.pathname);
   const [pathPart, queryPart = ''] = candidate.split('?');
   const normalizedPath = pathPart.replace(/\/+$/, '') || '/';
   const params = new URLSearchParams(queryPart);
@@ -130,7 +131,12 @@ export default function App() {
 
   const handleSyncHash = useCallback((nextHash: string) => {
     if (window.location.hash !== nextHash) {
-      window.history.replaceState(null, '', nextHash);
+      try {
+        window.history.replaceState(null, '', nextHash);
+      } catch {
+        // Fallback for strict file:// origins where history.replaceState may be restricted
+        window.location.hash = nextHash;
+      }
     }
   }, []);
 
